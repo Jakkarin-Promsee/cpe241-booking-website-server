@@ -6,10 +6,13 @@ async function findAll({ venueId, date } = {}) {
       sg.showing_id, sg.show_id, sg.venues_id, sg.status,
       sg.showtime_date, sg.start_time, sg.end_time, sg.booking_date, sg.language,
       st.showtime_title AS movie_title, st.duration,
-      v.venues_name
+      v.venues_name,
+      COALESCE(SUM(rs.status IN ('Reserved', 'Confirmed')), 0) AS sold,
+      COUNT(rs.seat_id) AS capacity
     FROM showing sg
     JOIN showtimes st ON sg.show_id = st.show_id
     JOIN venues   v  ON sg.venues_id = v.venues_id
+    LEFT JOIN reserved_seats rs ON rs.showing_id = sg.showing_id
     WHERE 1=1
   `;
   const params = [];
@@ -21,7 +24,13 @@ async function findAll({ venueId, date } = {}) {
     sql += ' AND sg.showtime_date = ?';
     params.push(date);
   }
-  sql += ' ORDER BY sg.showtime_date ASC, sg.start_time ASC';
+  sql += `
+    GROUP BY
+      sg.showing_id, sg.show_id, sg.venues_id, sg.status,
+      sg.showtime_date, sg.start_time, sg.end_time, sg.booking_date, sg.language,
+      st.showtime_title, st.duration, v.venues_name
+    ORDER BY sg.showtime_date ASC, sg.start_time ASC
+  `;
   const [rows] = await pool.query(sql, params);
   return rows;
 }
@@ -133,7 +142,17 @@ async function hasBookings(showingId) {
   return rows[0].cnt > 0;
 }
 
+async function findMovieDurationById(showId) {
+  const [rows] = await pool.query(
+    'SELECT duration FROM showtimes WHERE show_id = ?',
+    [showId]
+  );
+  if (!rows[0]) return null;
+  return Number(rows[0].duration) || 0;
+}
+
 module.exports = {
   findAll, findById, create, update, remove,
   checkOverlap, populateReservedSeats, createWithSeats, deleteReservedSeats, hasBookings,
+  findMovieDurationById,
 };

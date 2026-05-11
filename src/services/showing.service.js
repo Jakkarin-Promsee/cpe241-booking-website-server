@@ -8,6 +8,8 @@ const SEAT_PRICE_MAP = {
 };
 
 const SHOWING_STATUSES = ['Ontime', 'Overdue', 'Full'];
+const DEFAULT_AD_MINUTES = 15;
+const DEFAULT_BUFFER_MINUTES = 10;
 
 function resolveSeatPrice(seatPrice) {
   if (typeof seatPrice === 'number' && seatPrice > 0) return seatPrice;
@@ -23,6 +25,40 @@ function startHourToTime(h) {
 function resolveTime(hourFloat, timeStr) {
   if (typeof hourFloat === 'number') return startHourToTime(hourFloat);
   return timeStr || null;
+}
+
+function timeToMinutes(timeStr) {
+  const parts = String(timeStr || '').split(':');
+  const h = Number(parts[0]) || 0;
+  const m = Number(parts[1]) || 0;
+  return h * 60 + m;
+}
+
+function minutesToTimeStr(totalMinutes) {
+  const minsInDay = 24 * 60;
+  const normalized = ((totalMinutes % minsInDay) + minsInDay) % minsInDay;
+  const h = Math.floor(normalized / 60);
+  const m = normalized % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+}
+
+function normalizeExtraMinutes(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+async function computeEndTime({ showId, startTime, adMinutes, bufferMinutes }) {
+  const movieDuration = await showingModel.findMovieDurationById(showId);
+  if (!movieDuration || movieDuration <= 0) {
+    const err = new Error('Cannot resolve movie duration for this showId');
+    err.statusCode = 400;
+    throw err;
+  }
+  const ad = normalizeExtraMinutes(adMinutes, DEFAULT_AD_MINUTES);
+  const buffer = normalizeExtraMinutes(bufferMinutes, DEFAULT_BUFFER_MINUTES);
+  const total = movieDuration + ad + buffer;
+  return minutesToTimeStr(timeToMinutes(startTime) + total);
 }
 
 function assertCreateFields(data) {
@@ -57,14 +93,22 @@ async function createShowing(data) {
   assertCreateFields(data);
 
   const startTime = resolveTime(data.startHour, data.startTime);
-  const endTime   = resolveTime(data.endHour,   data.endTime);
   const seatPrice = resolveSeatPrice(data.seatPrice);
 
-  if (!startTime || !endTime) {
-    const err = new Error('startTime and endTime are required');
+  if (!startTime) {
+    const err = new Error('startTime is required');
     err.statusCode = 400;
     throw err;
   }
+
+  const endTime =
+    resolveTime(data.endHour, data.endTime) ||
+    await computeEndTime({
+      showId: data.showId,
+      startTime,
+      adMinutes: data.adMinutes,
+      bufferMinutes: data.bufferMinutes,
+    });
 
   const overlap = await showingModel.checkOverlap({
     venueId:      data.venueId,
@@ -111,10 +155,26 @@ async function updateShowing(id, data) {
     throw err;
   }
 
-  const startTime    = resolveTime(data.startHour, data.startTime) || existing.start_time;
-  const endTime      = resolveTime(data.endHour,   data.endTime)   || existing.end_time;
-  const venueId      = data.venueId      ?? existing.venues_id;
+  const startTime = resolveTime(data.startHour, data.startTime) || existing.start_time;
+  const showId = data.showId ?? existing.show_id;
+  const venueId = data.venueId ?? existing.venues_id;
   const showtimeDate = data.showtimeDate ?? existing.showtime_date;
+  const shouldRecomputeEnd =
+    data.endTime === undefined &&
+    data.endHour === undefined &&
+    (data.startTime !== undefined ||
+      data.startHour !== undefined ||
+      data.showId !== undefined ||
+      data.adMinutes !== undefined ||
+      data.bufferMinutes !== undefined);
+  const endTime = shouldRecomputeEnd
+    ? await computeEndTime({
+        showId,
+        startTime,
+        adMinutes: data.adMinutes,
+        bufferMinutes: data.bufferMinutes,
+      })
+    : resolveTime(data.endHour, data.endTime) || existing.end_time;
 
   const overlap = await showingModel.checkOverlap({
     venueId,
@@ -130,7 +190,7 @@ async function updateShowing(id, data) {
   }
 
   await showingModel.update(id, {
-    showId:       data.showId       ?? existing.show_id,
+    showId,
     venueId,
     status:       data.status       ?? existing.status,
     showtimeDate,
