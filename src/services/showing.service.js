@@ -7,6 +7,8 @@ const SEAT_PRICE_MAP = {
   'Student price':  200.00,
 };
 
+const SHOWING_STATUSES = ['Ontime', 'Overdue', 'Full'];
+
 function resolveSeatPrice(seatPrice) {
   if (typeof seatPrice === 'number' && seatPrice > 0) return seatPrice;
   return SEAT_PRICE_MAP[seatPrice] ?? 280.00;
@@ -23,11 +25,37 @@ function resolveTime(hourFloat, timeStr) {
   return timeStr || null;
 }
 
+function assertCreateFields(data) {
+  if (!data.showId || !Number.isInteger(Number(data.showId)) || Number(data.showId) <= 0) {
+    const err = new Error('showId must be a positive integer');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!data.venueId || !Number.isInteger(Number(data.venueId)) || Number(data.venueId) <= 0) {
+    const err = new Error('venueId must be a positive integer');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!data.showtimeDate || !/^\d{4}-\d{2}-\d{2}$/.test(data.showtimeDate)) {
+    const err = new Error('showtimeDate must be a date in YYYY-MM-DD format');
+    err.statusCode = 400;
+    throw err;
+  }
+  const status = data.status !== undefined ? data.status : 'Ontime';
+  if (!SHOWING_STATUSES.includes(status)) {
+    const err = new Error(`status must be one of: ${SHOWING_STATUSES.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
+}
+
 async function listShowings({ venueId, date } = {}) {
   return showingModel.findAll({ venueId, date });
 }
 
 async function createShowing(data) {
+  assertCreateFields(data);
+
   const startTime = resolveTime(data.startHour, data.startTime);
   const endTime   = resolveTime(data.endHour,   data.endTime);
   const seatPrice = resolveSeatPrice(data.seatPrice);
@@ -50,7 +78,7 @@ async function createShowing(data) {
     throw err;
   }
 
-  const showingId = await showingModel.create({
+  const showingId = await showingModel.createWithSeats({
     showId:       data.showId,
     venueId:      data.venueId,
     status:       data.status || 'Ontime',
@@ -59,9 +87,8 @@ async function createShowing(data) {
     endTime,
     bookingDate:  data.bookingDate,
     language:     data.language,
-  });
+  }, seatPrice);
 
-  await showingModel.populateReservedSeats(showingId, data.venueId, seatPrice);
   return showingModel.findById(showingId);
 }
 
@@ -73,9 +100,20 @@ async function updateShowing(id, data) {
     throw err;
   }
 
-  const startTime   = resolveTime(data.startHour, data.startTime) || existing.start_time;
-  const endTime     = resolveTime(data.endHour,   data.endTime)   || existing.end_time;
-  const venueId     = data.venueId     ?? existing.venues_id;
+  if (data.status !== undefined && !SHOWING_STATUSES.includes(data.status)) {
+    const err = new Error(`status must be one of: ${SHOWING_STATUSES.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
+  if (data.showtimeDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(data.showtimeDate)) {
+    const err = new Error('showtimeDate must be a date in YYYY-MM-DD format');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const startTime    = resolveTime(data.startHour, data.startTime) || existing.start_time;
+  const endTime      = resolveTime(data.endHour,   data.endTime)   || existing.end_time;
+  const venueId      = data.venueId      ?? existing.venues_id;
   const showtimeDate = data.showtimeDate ?? existing.showtime_date;
 
   const overlap = await showingModel.checkOverlap({

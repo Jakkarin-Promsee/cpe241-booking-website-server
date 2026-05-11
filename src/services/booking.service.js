@@ -1,6 +1,13 @@
 const bookingModel = require('../models/booking.model');
 
+const BOOKING_STATUSES = ['Booking', 'Checkout', 'Successful', 'Cancel'];
+
 async function listBookings(filters) {
+  if (filters.status && !BOOKING_STATUSES.includes(filters.status)) {
+    const err = new Error(`status must be one of: ${BOOKING_STATUSES.join(', ')}`);
+    err.statusCode = 400;
+    throw err;
+  }
   return bookingModel.findAll(filters);
 }
 

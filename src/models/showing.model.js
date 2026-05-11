@@ -91,6 +91,33 @@ async function populateReservedSeats(showingId, venueId, seatPrice) {
   );
 }
 
+async function createWithSeats({ showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language }, seatPrice) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      `INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null]
+    );
+    const showingId = result.insertId;
+    await conn.query(
+      `INSERT INTO reserved_seats (showing_id, seat_id, status, seat_price)
+       SELECT ?, cs.seat_id, 'Free', ?
+       FROM contain_seats cs
+       WHERE cs.venues_id = ?`,
+      [showingId, seatPrice, venueId]
+    );
+    await conn.commit();
+    return showingId;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 async function deleteReservedSeats(showingId) {
   await pool.query(
     'DELETE FROM reserved_seats WHERE showing_id = ?',
@@ -108,5 +135,5 @@ async function hasBookings(showingId) {
 
 module.exports = {
   findAll, findById, create, update, remove,
-  checkOverlap, populateReservedSeats, deleteReservedSeats, hasBookings,
+  checkOverlap, populateReservedSeats, createWithSeats, deleteReservedSeats, hasBookings,
 };

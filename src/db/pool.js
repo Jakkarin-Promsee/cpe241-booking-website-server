@@ -11,6 +11,10 @@ const config = {
   waitForConnections: true,
   connectionLimit: Number(process.env.MYSQL_CONNECTION_LIMIT) || 10,
   queueLimit: 0,
+  // Return DATE columns as "YYYY-MM-DD" strings, not JS Date objects.
+  // Return DECIMAL/SUM results as numbers, not strings.
+  dateStrings: ['DATE'],
+  decimalNumbers: true,
 };
 
 if (process.env.MYSQL_DATABASE) {

@@ -1,6 +1,8 @@
 const { pool } = require('../db/pool');
 
-async function findAll({ search, status, dateFrom, dateTo, page = 1, limit = 50 } = {}) {
+async function findAll({ search, status, dateFrom, dateTo, page = 1, limit = 50, } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const safePage  = Math.max(Number(page) || 1, 1);
   let sql = `
     SELECT
       b.booking_id,
@@ -51,7 +53,7 @@ async function findAll({ search, status, dateFrom, dateTo, page = 1, limit = 50 
     ORDER BY b.date DESC, b.time DESC
     LIMIT ? OFFSET ?
   `;
-  params.push(Number(limit), (Number(page) - 1) * Number(limit));
+  params.push(safeLimit, (safePage - 1) * safeLimit);
 
   const [rows] = await pool.query(sql, params);
   return rows;

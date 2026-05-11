@@ -30,7 +30,7 @@ async function main() {
   try {
     await conn.query(sql);
     console.log('Seed applied:', sqlPath);
-    console.log('Credentials — admin: Admin@1234 | manager: Manager@1234 | customers: User@1234');
+    console.log('Default credentials are defined in 003_seed.js — change them before any non-local deployment.');
   } finally {
     await conn.end();
   }

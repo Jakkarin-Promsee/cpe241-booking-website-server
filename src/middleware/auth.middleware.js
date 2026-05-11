@@ -18,4 +18,13 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'Admin') {
+    const err = new Error('Admin access only');
+    err.statusCode = 403;
+    return next(err);
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin };
