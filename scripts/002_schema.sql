@@ -113,3 +113,22 @@ CREATE TABLE booking_items (
   CONSTRAINT fk_bi_booking FOREIGN KEY (booking_id) REFERENCES booking(booking_id) ON DELETE RESTRICT,
   CONSTRAINT fk_bi_seat    FOREIGN KEY (seat_id)    REFERENCES seats(seat_id)      ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ─── Performance indexes ───────────────────────────────────────────────────────
+-- booking: date range scans used by dashboard stats, trend chart, and report queries
+CREATE INDEX idx_booking_date        ON booking (date);
+-- booking: composite for report queries that filter status = 'Successful' + date range
+--          leading column `status` eliminates non-Successful rows before the date scan
+CREATE INDEX idx_booking_status_date ON booking (status, date);
+
+-- showing: date lookup used by dashboard upcoming list and screen management filter
+CREATE INDEX idx_showing_date        ON showing (showtime_date);
+-- showing: composite for the overlap check query (venues_id = ? AND showtime_date = ?)
+--          both equality columns covered; MySQL then range-scans start_time/end_time
+CREATE INDEX idx_showing_venue_date  ON showing (venues_id, showtime_date);
+
+-- reserved_seats: covering index for sold/capacity aggregations
+--   SUM(status IN ('Reserved','Confirmed')) and COUNT(seat_id) per showing_id
+--   PK is (showing_id, seat_id) so showing_id lookups already use PK, but adding
+--   status here lets MySQL answer the aggregation without touching the main row data
+CREATE INDEX idx_rs_showing_status   ON reserved_seats (showing_id, status);
