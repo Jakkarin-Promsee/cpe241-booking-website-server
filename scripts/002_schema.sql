@@ -46,10 +46,11 @@ CREATE TABLE showtimes (
   showtime_title    VARCHAR(200) NOT NULL,
   showtime_descript TEXT,
   duration          INT NOT NULL,
-  status            ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  status            ENUM('Upcoming','Open','Ended','Hidden') NOT NULL DEFAULT 'Upcoming',
   genre             VARCHAR(100),
   poster_url        VARCHAR(500),
   release_date      DATE,
+  end_date          DATE,
   CONSTRAINT chk_duration CHECK (duration > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

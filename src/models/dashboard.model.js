@@ -2,7 +2,17 @@ const { pool } = require('../db/pool');
 
 async function getStats() {
   const [[activeMovies]] = await pool.query(
-    "SELECT COUNT(*) AS count FROM showtimes WHERE status = 'Active'"
+    `SELECT COUNT(*) AS count
+     FROM showtimes
+     WHERE (
+       CASE
+         WHEN status IN ('Hidden', 'Ended') THEN status
+         WHEN end_date IS NOT NULL AND CURDATE() > end_date THEN 'Ended'
+         WHEN release_date IS NOT NULL AND CURDATE() < release_date THEN 'Upcoming'
+         WHEN status = 'Open' THEN 'Open'
+         ELSE 'Upcoming'
+       END
+     ) = 'Open'`
   );
 
   const [[onlineScreens]] = await pool.query(

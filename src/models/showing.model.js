@@ -127,6 +127,71 @@ async function createWithSeats({ showId, venueId, status, showtimeDate, startTim
   }
 }
 
+async function listSeatIdsByVenue(venueId, conn = pool) {
+  const [rows] = await conn.query(
+    `SELECT seat_id
+     FROM contain_seats
+     WHERE venues_id = ?`,
+    [venueId]
+  );
+  return rows.map((r) => Number(r.seat_id));
+}
+
+async function createWithSeatPricing(
+  { showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language },
+  defaultSeatPrice,
+  seatPricing
+) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query(
+      `INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null]
+    );
+    const showingId = result.insertId;
+    const seatIds = await listSeatIdsByVenue(venueId, conn);
+    const priceMap = new Map(
+      (Array.isArray(seatPricing) ? seatPricing : []).map((item) => [
+        Number(item.seatId),
+        Number(item.seatPrice),
+      ])
+    );
+    if (seatIds.length > 0) {
+      const values = seatIds.map((seatId) => [
+        showingId,
+        seatId,
+        'Free',
+        priceMap.get(seatId) ?? defaultSeatPrice,
+      ]);
+      await conn.query(
+        'INSERT INTO reserved_seats (showing_id, seat_id, status, seat_price) VALUES ?',
+        [values]
+      );
+    }
+    await conn.commit();
+    return showingId;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function updateReservedSeatPricing(showingId, seatPricing) {
+  const items = Array.isArray(seatPricing) ? seatPricing : [];
+  for (const item of items) {
+    await pool.query(
+      `UPDATE reserved_seats
+       SET seat_price = ?, status = 'Free'
+       WHERE showing_id = ? AND seat_id = ?`,
+      [item.seatPrice, showingId, item.seatId]
+    );
+  }
+}
+
 async function deleteReservedSeats(showingId) {
   await pool.query(
     'DELETE FROM reserved_seats WHERE showing_id = ?',
@@ -155,4 +220,7 @@ module.exports = {
   findAll, findById, create, update, remove,
   checkOverlap, populateReservedSeats, createWithSeats, deleteReservedSeats, hasBookings,
   findMovieDurationById,
+  listSeatIdsByVenue,
+  createWithSeatPricing,
+  updateReservedSeatPricing,
 };

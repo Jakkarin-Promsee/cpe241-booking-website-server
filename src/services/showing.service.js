@@ -1,10 +1,10 @@
 const showingModel = require('../models/showing.model');
 
 const SEAT_PRICE_MAP = {
-  'Weekend price':  350.00,
-  'Weekday price':  280.00,
-  'Holiday price':  400.00,
-  'Student price':  200.00,
+  'Weekend price': 350.00,
+  'Weekday price': 280.00,
+  'Holiday price': 400.00,
+  'Student price': 200.00,
 };
 
 const SHOWING_STATUSES = ['Ontime', 'Overdue', 'Full'];
@@ -16,9 +16,23 @@ function resolveSeatPrice(seatPrice) {
   return SEAT_PRICE_MAP[seatPrice] ?? 280.00;
 }
 
+function normalizeSeatPricing(seatPricing, allowedSeatIds) {
+  const allowed = new Set((allowedSeatIds || []).map((x) => Number(x)));
+  const raw = Array.isArray(seatPricing) ? seatPricing : [];
+  const map = new Map();
+  for (const item of raw) {
+    const seatId = Number(item?.seatId);
+    const seatPrice = Number(item?.seatPrice);
+    if (!Number.isInteger(seatId) || seatId <= 0 || !allowed.has(seatId)) continue;
+    if (!Number.isFinite(seatPrice) || seatPrice <= 0) continue;
+    map.set(seatId, Number(seatPrice.toFixed(2)));
+  }
+  return Array.from(map.entries()).map(([seatId, seatPrice]) => ({ seatId, seatPrice }));
+}
+
 function startHourToTime(h) {
   const hours = Math.floor(h);
-  const mins  = Math.round((h - hours) * 60);
+  const mins = Math.round((h - hours) * 60);
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
 }
 
@@ -111,7 +125,7 @@ async function createShowing(data) {
     });
 
   const overlap = await showingModel.checkOverlap({
-    venueId:      data.venueId,
+    venueId: data.venueId,
     showtimeDate: data.showtimeDate,
     startTime,
     endTime,
@@ -122,16 +136,18 @@ async function createShowing(data) {
     throw err;
   }
 
-  const showingId = await showingModel.createWithSeats({
-    showId:       data.showId,
-    venueId:      data.venueId,
-    status:       data.status || 'Ontime',
+  const venueSeatIds = await showingModel.listSeatIdsByVenue(data.venueId);
+  const seatPricing = normalizeSeatPricing(data.seatPricing, venueSeatIds);
+  const showingId = await showingModel.createWithSeatPricing({
+    showId: data.showId,
+    venueId: data.venueId,
+    status: data.status || 'Ontime',
     showtimeDate: data.showtimeDate,
     startTime,
     endTime,
-    bookingDate:  data.bookingDate,
-    language:     data.language,
-  }, seatPrice);
+    bookingDate: data.bookingDate,
+    language: data.language,
+  }, seatPrice, seatPricing);
 
   return showingModel.findById(showingId);
 }
@@ -169,11 +185,11 @@ async function updateShowing(id, data) {
       data.bufferMinutes !== undefined);
   const endTime = shouldRecomputeEnd
     ? await computeEndTime({
-        showId,
-        startTime,
-        adMinutes: data.adMinutes,
-        bufferMinutes: data.bufferMinutes,
-      })
+      showId,
+      startTime,
+      adMinutes: data.adMinutes,
+      bufferMinutes: data.bufferMinutes,
+    })
     : resolveTime(data.endHour, data.endTime) || existing.end_time;
 
   const overlap = await showingModel.checkOverlap({
@@ -192,13 +208,21 @@ async function updateShowing(id, data) {
   await showingModel.update(id, {
     showId,
     venueId,
-    status:       data.status       ?? existing.status,
+    status: data.status ?? existing.status,
     showtimeDate,
     startTime,
     endTime,
-    bookingDate:  data.bookingDate  ?? existing.booking_date,
-    language:     data.language     ?? existing.language,
+    bookingDate: data.bookingDate ?? existing.booking_date,
+    language: data.language ?? existing.language,
   });
+
+  if (Array.isArray(data.seatPricing) && data.seatPricing.length > 0) {
+    const venueSeatIds = await showingModel.listSeatIdsByVenue(venueId);
+    const seatPricing = normalizeSeatPricing(data.seatPricing, venueSeatIds);
+    if (seatPricing.length > 0) {
+      await showingModel.updateReservedSeatPricing(id, seatPricing);
+    }
+  }
   return showingModel.findById(id);
 }
 

@@ -1,6 +1,6 @@
 const movieModel = require('../models/movie.model');
 
-const MOVIE_STATUSES = ['Active', 'Inactive'];
+const MOVIE_STATUSES = ['Upcoming', 'Open', 'Ended', 'Hidden'];
 
 function assertMovieFields(data) {
   if (!data.title || typeof data.title !== 'string' || !data.title.trim()) {
@@ -14,11 +14,25 @@ function assertMovieFields(data) {
     err.statusCode = 400;
     throw err;
   }
-  const status = data.status !== undefined ? data.status : 'Active';
+  const status = data.status !== undefined ? data.status : 'Upcoming';
   if (!MOVIE_STATUSES.includes(status)) {
     const err = new Error(`status must be one of: ${MOVIE_STATUSES.join(', ')}`);
     err.statusCode = 400;
     throw err;
+  }
+  if (data.releaseDate && data.endDate) {
+    const release = new Date(data.releaseDate);
+    const end = new Date(data.endDate);
+    if (Number.isNaN(release.getTime()) || Number.isNaN(end.getTime())) {
+      const err = new Error('releaseDate and endDate must be valid dates');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (end < release) {
+      const err = new Error('endDate must be on or after releaseDate');
+      err.statusCode = 400;
+      throw err;
+    }
   }
 }
 
@@ -28,7 +42,7 @@ async function listMovies(filters) {
 
 async function createMovie(data) {
   assertMovieFields(data);
-  const id = await movieModel.create({ ...data, status: data.status || 'Active' });
+  const id = await movieModel.create({ ...data, status: data.status || 'Upcoming' });
   return movieModel.findById(id);
 }
 

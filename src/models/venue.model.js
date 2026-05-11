@@ -2,9 +2,14 @@ const { pool } = require('../db/pool');
 
 async function findAll() {
   const [rows] = await pool.query(
-    'SELECT * FROM venues ORDER BY venues_id ASC'
+    `SELECT v.venues_id, v.venues_name, v.venues_address,
+            COUNT(cs.seat_id) AS seat_count
+     FROM venues v
+     LEFT JOIN contain_seats cs ON cs.venues_id = v.venues_id
+     GROUP BY v.venues_id, v.venues_name, v.venues_address
+     ORDER BY v.venues_id ASC`
   );
-  return rows;
+  return rows.map((r) => ({ ...r, seat_count: Number(r.seat_count) }));
 }
 
 async function findById(venueId) {

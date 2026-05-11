@@ -60,13 +60,13 @@ INSERT INTO contain_seats (venues_id, seat_id) VALUES
 
 -- ─── Showtimes / Movies (6) ───────────────────────────────────────────────────
 
-INSERT INTO showtimes (showtime_title, showtime_descript, duration, status, genre, poster_url, release_date) VALUES
-('Avengers: Endgame',  'The Avengers make one final stand against Thanos.',           181, 'Active',   'Action',   NULL, '2019-04-26'),
-('The Dark Knight',    'Batman faces the Joker as Gotham spirals into chaos.',        152, 'Active',   'Action',   NULL, '2008-07-18'),
-('Inception',          'A thief enters dreams to plant an idea in a mark''s mind.',   148, 'Active',   'Sci-Fi',   NULL, '2010-07-16'),
-('Interstellar',       'Astronauts travel through a wormhole seeking a new home.',    169, 'Active',   'Sci-Fi',   NULL, '2014-11-07'),
-('Parasite',           'A poor family schemes their way into a wealthy household.',   132, 'Active',   'Thriller', NULL, '2019-05-30'),
-('Oppenheimer',        'The story of J. Robert Oppenheimer and the atomic bomb.',     180, 'Inactive', 'Drama',    NULL, '2023-07-21');
+INSERT INTO showtimes (showtime_title, showtime_descript, duration, status, genre, poster_url, release_date, end_date) VALUES
+('Avengers: Endgame',  'The Avengers make one final stand against Thanos.',           181, 'Open',             'Action',   NULL, '2019-04-26', NULL),
+('The Dark Knight',    'Batman faces the Joker as Gotham spirals into chaos.',        152, 'Open',             'Action',   NULL, '2008-07-18', NULL),
+('Inception',          'A thief enters dreams to plant an idea in a mark''s mind.',   148, 'Open',             'Sci-Fi',   NULL, '2010-07-16', NULL),
+('Interstellar',       'Astronauts travel through a wormhole seeking a new home.',    169, 'Ended',            'Sci-Fi',   NULL, '2014-11-07', NULL),
+('Parasite',           'A poor family schemes their way into a wealthy household.',   132, 'Hidden',           'Thriller', NULL, '2019-05-30', NULL),
+('Oppenheimer',        'The story of J. Robert Oppenheimer and the atomic bomb.',     180, 'Upcoming',         'Drama',    NULL, '2023-07-21', NULL);
 
 -- ─── Showings (8 slots across today and tomorrow) ────────────────────────────
 -- show_id: 1=Avengers, 2=Dark Knight, 3=Inception, 4=Interstellar, 5=Parasite
