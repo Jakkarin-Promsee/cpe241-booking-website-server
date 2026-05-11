@@ -100,33 +100,6 @@ async function populateReservedSeats(showingId, venueId, seatPrice) {
   );
 }
 
-async function createWithSeats({ showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language }, seatPrice) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const [result] = await conn.query(
-      `INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null]
-    );
-    const showingId = result.insertId;
-    await conn.query(
-      `INSERT INTO reserved_seats (showing_id, seat_id, status, seat_price)
-       SELECT ?, cs.seat_id, 'Free', ?
-       FROM contain_seats cs
-       WHERE cs.venues_id = ?`,
-      [showingId, seatPrice, venueId]
-    );
-    await conn.commit();
-    return showingId;
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
-}
-
 async function listSeatIdsByVenue(venueId, conn = pool) {
   const [rows] = await conn.query(
     `SELECT seat_id
@@ -137,6 +110,8 @@ async function listSeatIdsByVenue(venueId, conn = pool) {
   return rows.map((r) => Number(r.seat_id));
 }
 
+// Fix 3: overlap check is now inside the transaction using FOR UPDATE, eliminating
+// the TOCTOU race between checkOverlap() and the INSERT in the service layer.
 async function createWithSeatPricing(
   { showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language },
   defaultSeatPrice,
@@ -145,6 +120,22 @@ async function createWithSeatPricing(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    const [conflicts] = await conn.query(
+      `SELECT showing_id FROM showing
+       WHERE venues_id     = ?
+         AND showtime_date = ?
+         AND start_time    < ?
+         AND end_time      > ?
+       FOR UPDATE`,
+      [venueId, showtimeDate, endTime, startTime]
+    );
+    if (conflicts.length > 0) {
+      const err = new Error('Time slot overlaps with an existing showing in this venue');
+      err.statusCode = 409;
+      throw err;
+    }
+
     const [result] = await conn.query(
       `INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -180,15 +171,29 @@ async function createWithSeatPricing(
   }
 }
 
+// Fix 2: status is intentionally NOT reset here — only seat_price is updated.
+// Resetting status to 'Free' would silently unbook Reserved/Confirmed seats.
+// All updates are wrapped in one transaction to prevent partial state on failure.
 async function updateReservedSeatPricing(showingId, seatPricing) {
   const items = Array.isArray(seatPricing) ? seatPricing : [];
-  for (const item of items) {
-    await pool.query(
-      `UPDATE reserved_seats
-       SET seat_price = ?, status = 'Free'
-       WHERE showing_id = ? AND seat_id = ?`,
-      [item.seatPrice, showingId, item.seatId]
-    );
+  if (items.length === 0) return;
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (const item of items) {
+      await conn.query(
+        `UPDATE reserved_seats
+         SET seat_price = ?
+         WHERE showing_id = ? AND seat_id = ?`,
+        [item.seatPrice, showingId, item.seatId]
+      );
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
 
@@ -197,6 +202,23 @@ async function deleteReservedSeats(showingId) {
     'DELETE FROM reserved_seats WHERE showing_id = ?',
     [showingId]
   );
+}
+
+// Fix 4: deletes reserved_seats and showing in one transaction so a partial
+// failure cannot leave orphaned reserved_seats rows.
+async function removeWithSeats(showingId) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('DELETE FROM reserved_seats WHERE showing_id = ?', [showingId]);
+    await conn.query('DELETE FROM showing WHERE showing_id = ?', [showingId]);
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 async function hasBookings(showingId) {
@@ -218,9 +240,8 @@ async function findMovieDurationById(showId) {
 
 module.exports = {
   findAll, findById, create, update, remove,
-  checkOverlap, populateReservedSeats, createWithSeats, deleteReservedSeats, hasBookings,
+  checkOverlap, populateReservedSeats, listSeatIdsByVenue,
+  createWithSeatPricing, updateReservedSeatPricing,
+  deleteReservedSeats, removeWithSeats, hasBookings,
   findMovieDurationById,
-  listSeatIdsByVenue,
-  createWithSeatPricing,
-  updateReservedSeatPricing,
 };

@@ -124,18 +124,6 @@ async function createShowing(data) {
       bufferMinutes: data.bufferMinutes,
     });
 
-  const overlap = await showingModel.checkOverlap({
-    venueId: data.venueId,
-    showtimeDate: data.showtimeDate,
-    startTime,
-    endTime,
-  });
-  if (overlap) {
-    const err = new Error('Time slot overlaps with an existing showing in this venue');
-    err.statusCode = 409;
-    throw err;
-  }
-
   const venueSeatIds = await showingModel.listSeatIdsByVenue(data.venueId);
   const seatPricing = normalizeSeatPricing(data.seatPricing, venueSeatIds);
   const showingId = await showingModel.createWithSeatPricing({
@@ -238,8 +226,7 @@ async function deleteShowing(id) {
     err.statusCode = 409;
     throw err;
   }
-  await showingModel.deleteReservedSeats(id);
-  await showingModel.remove(id);
+  await showingModel.removeWithSeats(id);
 }
 
 module.exports = { listShowings, createShowing, updateShowing, deleteShowing };
