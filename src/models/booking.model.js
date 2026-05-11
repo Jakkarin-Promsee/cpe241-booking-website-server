@@ -33,8 +33,17 @@ async function findAll({ search, status, dateFrom, dateTo, page = 1, limit = 50,
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (status) {
-    sql += ' AND b.status = ?';
-    params.push(status);
+    const statuses = String(status)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (statuses.length === 1) {
+      sql += ' AND b.status = ?';
+      params.push(statuses[0]);
+    } else if (statuses.length > 1) {
+      sql += ` AND b.status IN (${statuses.map(() => '?').join(',')})`;
+      params.push(...statuses);
+    }
   }
   if (dateFrom) {
     sql += ' AND b.date >= ?';

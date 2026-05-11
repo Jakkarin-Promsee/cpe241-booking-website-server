@@ -3,10 +3,17 @@ const bookingModel = require('../models/booking.model');
 const BOOKING_STATUSES = ['Booking', 'Checkout', 'Successful', 'Cancel'];
 
 async function listBookings(filters) {
-  if (filters.status && !BOOKING_STATUSES.includes(filters.status)) {
-    const err = new Error(`status must be one of: ${BOOKING_STATUSES.join(', ')}`);
-    err.statusCode = 400;
-    throw err;
+  if (filters.status) {
+    const statuses = String(filters.status)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const invalid = statuses.filter((s) => !BOOKING_STATUSES.includes(s));
+    if (statuses.length === 0 || invalid.length > 0) {
+      const err = new Error(`status must be one of: ${BOOKING_STATUSES.join(', ')}`);
+      err.statusCode = 400;
+      throw err;
+    }
   }
   return bookingModel.findAll(filters);
 }

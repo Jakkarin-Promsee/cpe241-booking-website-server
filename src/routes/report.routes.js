@@ -7,5 +7,6 @@ const router = express.Router();
 router.get('/stats',           requireAuth, requireAdmin, reportController.getStats);
 router.get('/revenue/daily',   requireAuth, requireAdmin, reportController.getDailyRevenue);
 router.get('/revenue/monthly', requireAuth, requireAdmin, reportController.getMonthlyRevenue);
+router.get('/breakdown',       requireAuth, requireAdmin, reportController.getBreakdown);
 
 module.exports = router;
