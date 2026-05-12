@@ -1,6 +1,10 @@
 -- 002_schema.sql
 -- Run AFTER 001_create_database: creates all tables inside CPE241_final_project.
 -- Safe to re-run: drops in reverse FK order before creating.
+--
+-- Showing ads / cleanup: `showing.ad_minutes` and `showing.cleanup_minutes` are part
+-- of CREATE TABLE below. If you have a legacy DB you cannot drop, add those columns
+-- once (see comment at end of this file).
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -65,15 +69,17 @@ CREATE TABLE contain_seats (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE showing (
-  showing_id    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  show_id       INT UNSIGNED NOT NULL,
-  venues_id     INT UNSIGNED NOT NULL,
-  status        ENUM('Ontime','Overdue','Full') NOT NULL DEFAULT 'Ontime',
-  showtime_date DATE NOT NULL,
-  start_time    TIME NOT NULL,
-  end_time      TIME NOT NULL,
-  booking_date  DATE,
-  language      VARCHAR(50),
+  showing_id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  show_id          INT UNSIGNED NOT NULL,
+  venues_id        INT UNSIGNED NOT NULL,
+  status           ENUM('Ontime','Overdue','Full') NOT NULL DEFAULT 'Ontime',
+  showtime_date    DATE NOT NULL,
+  start_time       TIME NOT NULL,
+  end_time         TIME NOT NULL,
+  ad_minutes       SMALLINT UNSIGNED NOT NULL DEFAULT 15,
+  cleanup_minutes  SMALLINT UNSIGNED NOT NULL DEFAULT 10,
+  booking_date     DATE,
+  language         VARCHAR(50),
   UNIQUE KEY uq_venue_date_slot (venues_id, showtime_date, start_time),
   CONSTRAINT fk_showing_movie FOREIGN KEY (show_id)   REFERENCES showtimes(show_id)   ON DELETE RESTRICT,
   CONSTRAINT fk_showing_venue FOREIGN KEY (venues_id) REFERENCES venues(venues_id) ON DELETE RESTRICT
@@ -132,3 +138,11 @@ CREATE INDEX idx_showing_venue_date  ON showing (venues_id, showtime_date);
 --   PK is (showing_id, seat_id) so showing_id lookups already use PK, but adding
 --   status here lets MySQL answer the aggregation without touching the main row data
 CREATE INDEX idx_rs_showing_status   ON reserved_seats (showing_id, status);
+
+-- ─── Legacy DBs only (do NOT run after a full apply of this file) ──────────────
+-- If `showing` already exists without ad_minutes / cleanup_minutes and you must
+-- keep data without re-running the DROP/CREATE above, execute once in MySQL:
+--
+-- ALTER TABLE showing
+--   ADD COLUMN ad_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 15 AFTER end_time,
+--   ADD COLUMN cleanup_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 10 AFTER ad_minutes;

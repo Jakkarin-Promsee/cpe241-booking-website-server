@@ -10,7 +10,8 @@ SET SESSION sql_require_primary_key = 0;
 -- - 4 venues, each with 40 seats
 -- - 12 movies/showtimes with mixed lifecycle statuses
 -- - Showings spread across the previous months + near future
--- - High showing density around today (last week to next week)
+-- - High density in a ±10 day window around CURDATE (demo day); today = 4 neat slots/venue
+-- - Lighter slots every 5 days through end of 2026 (year-long calendar)
 -- - Booking records across all statuses (Booking / Checkout / Successful / Cancel)
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -113,12 +114,16 @@ INSERT INTO showtimes (showtime_title, showtime_descript, duration, status, genr
 ('Mission: Impossible - Dead Reckoning', 'Ethan Hunt tracks a dangerous AI weapon.', 163, 'Ended', 'Action', 'https://image.tmdb.org/t/p/w500/eQYPIdjoyrEKdZ3jfkkTa4qtf0u.jpg', '2023-07-12', '2026-01-31'),
 ('Past Lives', 'Two childhood friends reconnect decades later.', 106, 'Hidden', 'Romance', 'https://image.tmdb.org/t/p/w500/tE7bQhcAw6sbHpb2YuQDBbrqd1s.jpg', '2023-06-02', NULL),
 ('How to Train Your Dragon (Reissue)', 'A young Viking befriends a dragon.', 98, 'Upcoming', 'Adventure', 'https://image.tmdb.org/t/p/w500/nDP1jmTIuOtva1KBjVhCSbh8KJ6.jpg', '2026-07-10', NULL),
-('The Creator 2 (Teaser Run)', 'A near-future conflict between humans and AI.', 140, 'Upcoming', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/970sRzwOyrzS1IYPq39rM3TWLpk.jpg', '2026-08-01', NULL);
+('The Creator 2 (Teaser Run)', 'A near-future conflict between humans and AI.', 140, 'Upcoming', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/970sRzwOyrzS1IYPq39rM3TWLpk.jpg', '2026-08-01', NULL),
+('ลัดดาแลนด์', 'ครอบครัวย้ายเข้าบ้านใหม่ในหมู่บ้านจัดสรร แต่กลับต้องเผชิญกับเหตุการณ์สยองขวัญที่ไม่มีวันลืม.', 105, 'Open', 'Horror', 'https://image.tmdb.org/t/p/w500/zCujz1OPAAaJID3S6Zi7vmMGDwM.jpg', '2011-10-27', NULL);
 
 -- Showings base set: 48 rows
 -- - 36 past rows (9 months x 4 venues)
 -- - 12 near-future rows (3 months x 4 venues)
-INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
+-- Varied start times (pseudo-random from m/v) and explicit ad/cleanup (5–25 min each, step 5);
+-- end_time = start + movie_duration + ad + cleanup (matches app server logic).
+-- All showings: start in [10:00, 21:59:59], end by 21:59:59 same day (cinema hours).
+INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, ad_minutes, cleanup_minutes, booking_date, language)
 WITH RECURSIVE m AS (
   SELECT 0 AS month_offset
   UNION ALL
@@ -128,35 +133,80 @@ v AS (
   SELECT 1 AS venues_id
   UNION ALL
   SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+),
+pre AS (
+  SELECT
+    ((m.month_offset + v.venues_id - 1) % 12) + 1 AS show_id,
+    v.venues_id,
+    CASE
+      WHEN m.month_offset >= 6 THEN 'Overdue'
+      WHEN m.month_offset = 5 AND v.venues_id = 2 THEN 'Full'
+      ELSE 'Ontime'
+    END AS status,
+    DATE_SUB(CURDATE(), INTERVAL ((8 - m.month_offset) * 30 + v.venues_id) DAY) AS showtime_date,
+    DATE_SUB(CURDATE(), INTERVAL ((8 - m.month_offset) * 30 + 20 + v.venues_id) DAY) AS booking_date,
+    CASE WHEN (v.venues_id + m.month_offset) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language,
+    st.duration AS movie_duration,
+    CAST(
+      LEAST(25, GREATEST(5, 5 + MOD(10000 + m.month_offset * 17 + v.venues_id * 31 + (m.month_offset + v.venues_id) * 7, 5) * 5))
+      AS UNSIGNED
+    ) AS ad_minutes,
+    CAST(
+      LEAST(20, GREATEST(5, 5 + MOD(10000 + m.month_offset * 13 + v.venues_id * 19 + m.month_offset * 11, 4) * 5))
+      AS UNSIGNED
+    ) AS cleanup_minutes,
+    LEAST(
+      1170,
+      600
+        + MOD(m.month_offset * 73 + v.venues_id * 101 + m.month_offset * v.venues_id * 37, 380)
+        + (v.venues_id - 1) * 67
+    ) AS raw_start
+  FROM m
+  CROSS JOIN v
+  JOIN showtimes st ON st.show_id = ((m.month_offset + v.venues_id - 1) % 12) + 1
+),
+row_data AS (
+  SELECT
+    show_id,
+    venues_id,
+    status,
+    showtime_date,
+    booking_date,
+    language,
+    movie_duration,
+    ad_minutes,
+    cleanup_minutes,
+    GREATEST(
+      600,
+      LEAST(
+        raw_start,
+        FLOOR(
+          (TIME_TO_SEC(TIME('21:59:59')) - (movie_duration + ad_minutes + cleanup_minutes) * 60) / 60
+        )
+      )
+    ) AS start_min
+  FROM pre
 )
 SELECT
-  ((m.month_offset + v.venues_id - 1) % 10) + 1 AS show_id,
-  v.venues_id,
-  CASE
-    WHEN m.month_offset >= 6 THEN 'Overdue'
-    WHEN m.month_offset = 5 AND v.venues_id = 2 THEN 'Full'
-    ELSE 'Ontime'
-  END AS status,
-  DATE_SUB(CURDATE(), INTERVAL ((8 - m.month_offset) * 30 + v.venues_id) DAY) AS showtime_date,
-  CASE v.venues_id
-    WHEN 1 THEN '10:00:00'
-    WHEN 2 THEN '12:30:00'
-    WHEN 3 THEN '15:00:00'
-    ELSE '18:30:00'
-  END AS start_time,
-  CASE v.venues_id
-    WHEN 1 THEN '12:40:00'
-    WHEN 2 THEN '15:10:00'
-    WHEN 3 THEN '17:45:00'
-    ELSE '21:10:00'
-  END AS end_time,
-  DATE_SUB(CURDATE(), INTERVAL ((8 - m.month_offset) * 30 + 20 + v.venues_id) DAY) AS booking_date,
-  CASE WHEN (v.venues_id + m.month_offset) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language
-FROM m
-CROSS JOIN v
+  show_id,
+  venues_id,
+  status,
+  showtime_date,
+  SEC_TO_TIME(start_min * 60) AS start_time,
+  TIME(
+    TIMESTAMP(showtime_date, SEC_TO_TIME(start_min * 60))
+    + INTERVAL (movie_duration + ad_minutes + cleanup_minutes) MINUTE
+  ) AS end_time,
+  ad_minutes,
+  cleanup_minutes,
+  booking_date,
+  language
+FROM row_data
+WHERE start_min * 60 >= TIME_TO_SEC(TIME('10:00:00'))
+  AND start_min * 60 + (movie_duration + ad_minutes + cleanup_minutes) * 60 <= TIME_TO_SEC(TIME('21:59:59'))
 ORDER BY showtime_date, venues_id;
 
-INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
+INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, ad_minutes, cleanup_minutes, booking_date, language)
 WITH RECURSIVE fm AS (
   SELECT 0 AS month_offset
   UNION ALL
@@ -166,36 +216,107 @@ v AS (
   SELECT 1 AS venues_id
   UNION ALL
   SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+),
+pre_fm AS (
+  SELECT
+    ((fm.month_offset * 3 + v.venues_id + 4) % 12) + 1 AS show_id,
+    v.venues_id,
+    CASE WHEN fm.month_offset = 2 AND v.venues_id IN (1, 4) THEN 'Overdue' ELSE 'Ontime' END AS status,
+    DATE_ADD(CURDATE(), INTERVAL (180 + fm.month_offset * 45 + v.venues_id) DAY) AS showtime_date,
+    DATE_SUB(DATE_ADD(CURDATE(), INTERVAL (180 + fm.month_offset * 45 + v.venues_id) DAY), INTERVAL 14 DAY) AS booking_date,
+    CASE WHEN (v.venues_id + fm.month_offset) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language,
+    st.duration AS movie_duration,
+    CAST(
+      LEAST(25, GREATEST(5, 5 + MOD(10000 + fm.month_offset * 23 + v.venues_id * 29 + (fm.month_offset + v.venues_id) * 5, 5) * 5))
+      AS UNSIGNED
+    ) AS ad_minutes,
+    CAST(
+      LEAST(20, GREATEST(5, 5 + MOD(10000 + fm.month_offset * 31 + v.venues_id * 17 + v.venues_id * fm.month_offset * 3, 4) * 5))
+      AS UNSIGNED
+    ) AS cleanup_minutes,
+    LEAST(
+      1170,
+      615
+        + MOD(fm.month_offset * 89 + v.venues_id * 53 + fm.month_offset * v.venues_id * 41, 360)
+        + (v.venues_id - 1) * 71
+    ) AS raw_start
+  FROM fm
+  CROSS JOIN v
+  JOIN showtimes st ON st.show_id = ((fm.month_offset * 3 + v.venues_id + 4) % 12) + 1
+),
+row_data AS (
+  SELECT
+    show_id,
+    venues_id,
+    status,
+    showtime_date,
+    booking_date,
+    language,
+    movie_duration,
+    ad_minutes,
+    cleanup_minutes,
+    GREATEST(
+      600,
+      LEAST(
+        raw_start,
+        FLOOR(
+          (TIME_TO_SEC(TIME('21:59:59')) - (movie_duration + ad_minutes + cleanup_minutes) * 60) / 60
+        )
+      )
+    ) AS start_min
+  FROM pre_fm
 )
 SELECT
-  ((fm.month_offset * 3 + v.venues_id + 4) % 12) + 1 AS show_id,
-  v.venues_id,
-  CASE WHEN fm.month_offset = 2 AND v.venues_id IN (1, 4) THEN 'Overdue' ELSE 'Ontime' END AS status,
-  DATE_ADD(CURDATE(), INTERVAL (7 + fm.month_offset * 28 + v.venues_id) DAY) AS showtime_date,
-  CASE v.venues_id
-    WHEN 1 THEN '11:00:00'
-    WHEN 2 THEN '13:45:00'
-    WHEN 3 THEN '16:15:00'
-    ELSE '19:00:00'
-  END AS start_time,
-  CASE v.venues_id
-    WHEN 1 THEN '13:20:00'
-    WHEN 2 THEN '16:05:00'
-    WHEN 3 THEN '18:30:00'
-    ELSE '21:30:00'
-  END AS end_time,
-  DATE_SUB(DATE_ADD(CURDATE(), INTERVAL (7 + fm.month_offset * 28 + v.venues_id) DAY), INTERVAL 14 DAY) AS booking_date,
-  CASE WHEN (v.venues_id + fm.month_offset) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language
-FROM fm
-CROSS JOIN v
+  show_id,
+  venues_id,
+  status,
+  showtime_date,
+  SEC_TO_TIME(start_min * 60) AS start_time,
+  TIME(
+    TIMESTAMP(showtime_date, SEC_TO_TIME(start_min * 60))
+    + INTERVAL (movie_duration + ad_minutes + cleanup_minutes) MINUTE
+  ) AS end_time,
+  ad_minutes,
+  cleanup_minutes,
+  booking_date,
+  language
+FROM row_data
+WHERE start_min * 60 >= TIME_TO_SEC(TIME('10:00:00'))
+  AND start_min * 60 + (movie_duration + ad_minutes + cleanup_minutes) * 60 <= TIME_TO_SEC(TIME('21:59:59'))
 ORDER BY showtime_date, venues_id;
 
--- Dense window for Screen Manager: 120 extra rows (15 days x 4 venues x 2 slots)
-INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
-WITH RECURSIVE d AS (
-  SELECT -7 AS day_offset
+-- Screen Manager + demo calendar: slots per hall/day are chained so
+-- start[slot n] >= end[slot n-1] + 20 min turnover (no time overlap within a venue).
+-- Rows outside 10:00–21:59:59 (start and end) are dropped for that hall/day.
+INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, ad_minutes, cleanup_minutes, booking_date, language)
+WITH RECURSIVE near_days AS (
+  SELECT -10 AS day_offset
   UNION ALL
-  SELECT day_offset + 1 FROM d WHERE day_offset < 7
+  SELECT day_offset + 1 FROM near_days WHERE day_offset < 21
+),
+fwd_days AS (
+  SELECT 22 AS day_off
+  WHERE DATE_ADD(CURDATE(), INTERVAL 22 DAY) <= DATE('2026-12-31')
+  UNION ALL
+  SELECT day_off + 5 FROM fwd_days
+  WHERE DATE_ADD(CURDATE(), INTERVAL day_off + 5 DAY) <= DATE('2026-12-31')
+),
+day_spec AS (
+  SELECT
+    day_offset,
+    DATE_ADD(CURDATE(), INTERVAL day_offset DAY) AS showtime_date,
+    CASE
+      WHEN day_offset = 0 THEN 4
+      WHEN ABS(day_offset) <= 10 THEN 3
+      ELSE 2
+    END AS max_slot
+  FROM near_days
+  UNION ALL
+  SELECT
+    day_off,
+    DATE_ADD(CURDATE(), INTERVAL day_off DAY),
+    2
+  FROM fwd_days
 ),
 v AS (
   SELECT 1 AS venues_id
@@ -203,29 +324,94 @@ v AS (
   SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
 ),
 slot AS (
-  SELECT 1 AS slot_id, '11:00:00' AS start_time, '13:20:00' AS end_time
+  SELECT 1 AS slot_id
   UNION ALL
-  SELECT 2 AS slot_id, '18:00:00' AS start_time, '20:30:00' AS end_time
+  SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+),
+raw_rows AS (
+  SELECT
+    (
+      MOD(
+        DAYOFYEAR(ds.showtime_date) + ds.day_offset * 3 + v.venues_id * 2 + slot.slot_id * 5,
+        12
+      ) + 1
+    ) AS show_id,
+    v.venues_id,
+    CASE
+      WHEN ds.showtime_date < DATE_SUB(CURDATE(), INTERVAL 2 DAY) THEN 'Overdue'
+      WHEN ds.showtime_date = CURDATE() AND v.venues_id = 2 AND slot.slot_id = 2 THEN 'Full'
+      ELSE 'Ontime'
+    END AS status,
+    ds.showtime_date,
+    ds.day_offset,
+    slot.slot_id,
+    DATE_SUB(ds.showtime_date, INTERVAL 12 DAY) AS booking_date,
+    CASE WHEN (v.venues_id + ds.day_offset + slot.slot_id) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language,
+    st.duration AS movie_duration,
+    CAST(
+      LEAST(25, GREATEST(5, 5 + MOD(10000 + ds.day_offset * 19 + v.venues_id * 23 + slot.slot_id * 31, 5) * 5))
+      AS UNSIGNED
+    ) AS ad_minutes,
+    CAST(
+      LEAST(20, GREATEST(5, 5 + MOD(10000 + ds.day_offset * 29 + v.venues_id * 11 + slot.slot_id * 17, 4) * 5))
+      AS UNSIGNED
+    ) AS cleanup_minutes
+  FROM day_spec ds
+  CROSS JOIN v
+  CROSS JOIN slot
+  JOIN showtimes st ON st.show_id = (
+    MOD(
+      DAYOFYEAR(ds.showtime_date) + ds.day_offset * 3 + v.venues_id * 2 + slot.slot_id * 5,
+      12
+    ) + 1
+  )
+  WHERE slot.slot_id <= ds.max_slot
+),
+row_data AS (
+  SELECT
+    show_id,
+    venues_id,
+    status,
+    showtime_date,
+    booking_date,
+    language,
+    movie_duration,
+    ad_minutes,
+    cleanup_minutes,
+    /* First show of the day: small hall stagger. Later slots stack after prior end + 20 min. */
+    600
+      + (venues_id - 1) * 12
+      + COALESCE(
+        SUM(movie_duration + ad_minutes + cleanup_minutes + 20) OVER (
+          PARTITION BY showtime_date, venues_id
+          ORDER BY slot_id
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ),
+        0
+      ) AS start_min,
+    slot_id
+  FROM raw_rows
 )
 SELECT
-  ((d.day_offset + 10 + v.venues_id + slot.slot_id) % 12) + 1 AS show_id,
-  v.venues_id,
-  CASE
-    WHEN d.day_offset < -1 THEN 'Overdue'
-    WHEN d.day_offset = 0 AND v.venues_id = 2 AND slot.slot_id = 2 THEN 'Full'
-    ELSE 'Ontime'
-  END AS status,
-  DATE_ADD(CURDATE(), INTERVAL d.day_offset DAY) AS showtime_date,
-  slot.start_time,
-  slot.end_time,
-  DATE_SUB(DATE_ADD(CURDATE(), INTERVAL d.day_offset DAY), INTERVAL 12 DAY) AS booking_date,
-  CASE WHEN (v.venues_id + d.day_offset + slot.slot_id) % 2 = 0 THEN 'EN' ELSE 'TH' END AS language
-FROM d
-CROSS JOIN v
-CROSS JOIN slot
+  show_id,
+  venues_id,
+  status,
+  showtime_date,
+  SEC_TO_TIME(start_min * 60) AS start_time,
+  TIME(
+    TIMESTAMP(showtime_date, SEC_TO_TIME(start_min * 60))
+    + INTERVAL (movie_duration + ad_minutes + cleanup_minutes) MINUTE
+  ) AS end_time,
+  ad_minutes,
+  cleanup_minutes,
+  booking_date,
+  language
+FROM row_data
+WHERE start_min * 60 >= TIME_TO_SEC(TIME('10:00:00'))
+  AND start_min * 60 + (movie_duration + ad_minutes + cleanup_minutes) * 60 <= TIME_TO_SEC(TIME('21:59:59'))
 ORDER BY showtime_date, venues_id, start_time;
 
--- Reserved seats baseline (168 showings x 40 seats = 6,720)
+-- Reserved seats: every showing × venue seats (count grows with calendar seed)
 INSERT INTO reserved_seats (showing_id, seat_id, status, seat_price)
 SELECT
   sh.showing_id,
@@ -356,6 +542,14 @@ expanded_wave AS (
   SELECT day_offset, point_no, 2 AS slot_no FROM wave_points WHERE wave_strength > 0.55
   UNION ALL
   SELECT day_offset, point_no, 3 AS slot_no FROM wave_points WHERE wave_strength > 0.82
+),
+-- Single read of temp table (MySQL ER_CANT_REOPEN_TABLE if joined + subquery both touch it).
+seed_map AS (
+  SELECT
+    showing_id,
+    seq,
+    COUNT(*) OVER () AS showing_total
+  FROM seed_showing_map
 )
 SELECT
   3 + MOD(point_no + slot_no, 20) AS user_id, -- customer user_id range 3..22
@@ -377,7 +571,7 @@ SELECT
     ELSE NULL
   END AS payment_proof_url
 FROM expanded_wave ew
-JOIN seed_showing_map sm ON sm.seq = 40 + MOD((ew.point_no * 3) + (ew.slot_no * 5), 110);
+JOIN seed_map sm ON sm.seq = 1 + MOD((ew.point_no * 3) + (ew.slot_no * 5), GREATEST(1, sm.showing_total));
 
 -- Booking items: 3 seats per booking, deterministic per venue block
 INSERT INTO booking_items (booking_id, seat_id)
