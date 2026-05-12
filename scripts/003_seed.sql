@@ -102,18 +102,18 @@ ORDER BY venues_id, seat_no;
 
 -- Movies / showtimes (12)
 INSERT INTO showtimes (showtime_title, showtime_descript, duration, status, genre, poster_url, release_date, end_date) VALUES
-('Avengers: Endgame', 'The Avengers make one final stand against Thanos.', 181, 'Open', 'Action', NULL, '2019-04-26', NULL),
-('The Dark Knight', 'Batman faces the Joker as Gotham spirals into chaos.', 152, 'Open', 'Action', NULL, '2008-07-18', NULL),
-('Inception', 'A thief enters dreams to plant an idea in a mark''s mind.', 148, 'Open', 'Sci-Fi', NULL, '2010-07-16', NULL),
-('Interstellar', 'Astronauts travel through a wormhole seeking a new home.', 169, 'Ended', 'Sci-Fi', NULL, '2014-11-07', '2026-02-28'),
-('Parasite', 'A poor family schemes their way into a wealthy household.', 132, 'Hidden', 'Thriller', NULL, '2019-05-30', NULL),
-('Oppenheimer', 'The story of J. Robert Oppenheimer and the atomic bomb.', 180, 'Open', 'Drama', NULL, '2023-07-21', NULL),
-('Dune: Part Two', 'Paul Atreides unites with the Fremen for revenge.', 166, 'Open', 'Sci-Fi', NULL, '2024-03-01', NULL),
-('Inside Out 2', 'Riley enters teen life with new emotions joining headquarters.', 96, 'Open', 'Animation', NULL, '2024-06-14', NULL),
-('Mission: Impossible - Dead Reckoning', 'Ethan Hunt tracks a dangerous AI weapon.', 163, 'Ended', 'Action', NULL, '2023-07-12', '2026-01-31'),
-('Past Lives', 'Two childhood friends reconnect decades later.', 106, 'Hidden', 'Romance', NULL, '2023-06-02', NULL),
-('How to Train Your Dragon (Reissue)', 'A young Viking befriends a dragon.', 98, 'Upcoming', 'Adventure', NULL, '2026-07-10', NULL),
-('The Creator 2 (Teaser Run)', 'A near-future conflict between humans and AI.', 140, 'Upcoming', 'Sci-Fi', NULL, '2026-08-01', NULL);
+('Avengers: Endgame', 'The Avengers make one final stand against Thanos.', 181, 'Open', 'Action', 'https://image.tmdb.org/t/p/w500/5yxw4uVfwPwvvwKocEfNDiGi8rR.jpg', '2019-04-26', NULL),
+('The Dark Knight', 'Batman faces the Joker as Gotham spirals into chaos.', 152, 'Open', 'Action', 'https://image.tmdb.org/t/p/w500/4Vv2UznWz86TY64m7KWO7yhVT5A.jpg', '2008-07-18', NULL),
+('Inception', 'A thief enters dreams to plant an idea in a mark''s mind.', 148, 'Open', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/gVhGjY9k7mUvsLn0ea2obchJXgk.jpg', '2010-07-16', NULL),
+('Interstellar', 'Astronauts travel through a wormhole seeking a new home.', 169, 'Ended', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/aDJlk2mPEo0weBzJ1eikAqZeHwS.jpg', '2014-11-07', '2026-02-28'),
+('Parasite', 'A poor family schemes their way into a wealthy household.', 132, 'Hidden', 'Thriller', 'https://image.tmdb.org/t/p/w500/nR9FzuzwKShszf6ByrAAqUJvNvt.jpg', '2019-05-30', NULL),
+('Oppenheimer', 'The story of J. Robert Oppenheimer and the atomic bomb.', 180, 'Open', 'Drama', 'https://image.tmdb.org/t/p/w500/mXOpcMOEruhz4BX3vXnIYe3rYDM.jpg', '2023-07-21', NULL),
+('Dune: Part Two', 'Paul Atreides unites with the Fremen for revenge.', 166, 'Open', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/7KUXQmeXjDAwenHGvkqENw1uZMQ.jpg', '2024-03-01', NULL),
+('Inside Out 2', 'Riley enters teen life with new emotions joining headquarters.', 96, 'Open', 'Animation', 'https://image.tmdb.org/t/p/w500/9jwVu85QYSbcDiUFpPDgHEiXjOJ.jpg', '2024-06-14', NULL),
+('Mission: Impossible - Dead Reckoning', 'Ethan Hunt tracks a dangerous AI weapon.', 163, 'Ended', 'Action', 'https://image.tmdb.org/t/p/w500/eQYPIdjoyrEKdZ3jfkkTa4qtf0u.jpg', '2023-07-12', '2026-01-31'),
+('Past Lives', 'Two childhood friends reconnect decades later.', 106, 'Hidden', 'Romance', 'https://image.tmdb.org/t/p/w500/tE7bQhcAw6sbHpb2YuQDBbrqd1s.jpg', '2023-06-02', NULL),
+('How to Train Your Dragon (Reissue)', 'A young Viking befriends a dragon.', 98, 'Upcoming', 'Adventure', 'https://image.tmdb.org/t/p/w500/nDP1jmTIuOtva1KBjVhCSbh8KJ6.jpg', '2026-07-10', NULL),
+('The Creator 2 (Teaser Run)', 'A near-future conflict between humans and AI.', 140, 'Upcoming', 'Sci-Fi', 'https://image.tmdb.org/t/p/w500/970sRzwOyrzS1IYPq39rM3TWLpk.jpg', '2026-08-01', NULL);
 
 -- Showings base set: 48 rows
 -- - 36 past rows (9 months x 4 venues)
