@@ -13,6 +13,7 @@ SET SESSION sql_require_primary_key = 0;
 -- - High density in a ±10 day window around CURDATE (demo day); today = 4 neat slots/venue
 -- - Lighter slots every 5 days through end of 2026 (year-long calendar)
 -- - Booking records across all statuses (Booking / Checkout / Successful / Cancel)
+-- - Extra bookings on today / this week / this month so recent showings show healthy sold counts
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -573,12 +574,49 @@ SELECT
 FROM expanded_wave ew
 JOIN seed_map sm ON sm.seq = 1 + MOD((ew.point_no * 3) + (ew.slot_no * 5), GREATEST(1, sm.showing_total));
 
--- Booking items: 3 seats per booking, deterministic per venue block
+-- Recent-show attendance: many bookings on today / this week / this month so sold counts are visible.
+-- Tier weights: today = 3 bookings per showing, ±7 days = 1 booking when (showing_id+venue) even,
+-- ±30 days = 1 booking when (showing_id+venue) mod 3 = 0 (skips already-covered days handled by modulo).
+INSERT INTO booking (user_id, showing_id, date, time, status, payment_proof_url)
+SELECT
+  3 + MOD(s.showing_id * 11 + nk.k * 13 + s.venues_id * 5, 20) AS user_id,
+  s.showing_id,
+  DATE_SUB(s.showtime_date, INTERVAL nk.k DAY) AS date,
+  CAST(
+    TIMESTAMP(s.showtime_date, s.start_time) - INTERVAL (nk.k * 40 + 20) MINUTE
+    AS TIME
+  ) AS time,
+  CASE MOD(s.showing_id + nk.k + s.venues_id, 5)
+    WHEN 0 THEN 'Checkout'
+    WHEN 1 THEN 'Booking'
+    ELSE 'Successful'
+  END AS status,
+  CASE
+    WHEN MOD(s.showing_id + nk.k, 7) = 0
+      THEN CONCAT('https://storage.example.com/proof/recent-', s.showing_id, '-', nk.k, '.jpg')
+    ELSE NULL
+  END AS payment_proof_url
+FROM showing s
+JOIN (
+  SELECT 1 AS k
+  UNION ALL SELECT 2
+  UNION ALL SELECT 3
+) nk
+  ON nk.k <= CASE
+    WHEN s.showtime_date = CURDATE() THEN 3
+    WHEN ABS(DATEDIFF(s.showtime_date, CURDATE())) BETWEEN 1 AND 7
+      AND MOD(s.showing_id + s.venues_id, 2) = 0 THEN 1
+    WHEN ABS(DATEDIFF(s.showtime_date, CURDATE())) BETWEEN 8 AND 30
+      AND MOD(s.showing_id + s.venues_id, 3) = 0 THEN 1
+    ELSE 0
+  END;
+
+-- Booking items: 6 seats per booking (denser halls; formula stays injective across consecutive booking_id)
 INSERT INTO booking_items (booking_id, seat_id)
 SELECT
   b.booking_id,
   ((sh.venues_id - 1) * 40)
-  + (((b.booking_id - 1) * 3 + n.seq - 1) % 40)
+  + (((b.booking_id - 1) * 6 + n.seq - 1) % 40)
   + 1 AS seat_id
 FROM booking b
 JOIN showing sh ON sh.showing_id = b.showing_id
@@ -586,6 +624,9 @@ JOIN (
   SELECT 1 AS seq
   UNION ALL SELECT 2
   UNION ALL SELECT 3
+  UNION ALL SELECT 4
+  UNION ALL SELECT 5
+  UNION ALL SELECT 6
 ) n;
 
 -- Apply booking status to reserved seats
