@@ -112,4 +112,57 @@ async function cancel(bookingId) {
   }
 }
 
-module.exports = { findAll, findById, cancel };
+async function findLatestIdByUserId(userId) {
+  const [rows] = await pool.query(
+    `SELECT booking_id FROM booking WHERE user_id = ? ORDER BY booking_id DESC LIMIT 1`,
+    [userId]
+  );
+  return rows[0]?.booking_id ?? null;
+}
+
+async function findCustomerDetail(bookingId, userId) {
+  const [rows] = await pool.query(
+    `SELECT
+      b.booking_id,
+      b.user_id,
+      b.showing_id,
+      b.date,
+      b.time,
+      b.status,
+      b.payment_proof_url,
+      st.showtime_title AS movie_title,
+      v.venues_name,
+      sg.showtime_date,
+      sg.start_time,
+      sg.language
+    FROM booking b
+    JOIN showing sg ON b.showing_id = sg.showing_id
+    JOIN showtimes st ON sg.show_id = st.show_id
+    JOIN venues v ON sg.venues_id = v.venues_id
+    WHERE b.booking_id = ? AND b.user_id = ?`,
+    [bookingId, userId]
+  );
+  const head = rows[0];
+  if (!head) return null;
+  const [items] = await pool.query(
+    `SELECT bi.seat_id, s.seat_number, rs.seat_price
+     FROM booking_items bi
+     JOIN seats s ON s.seat_id = bi.seat_id
+     JOIN reserved_seats rs ON rs.showing_id = ? AND rs.seat_id = bi.seat_id
+     WHERE bi.booking_id = ?
+     ORDER BY s.seat_number`,
+    [head.showing_id, bookingId]
+  );
+  const total = items.reduce((sum, row) => sum + Number(row.seat_price), 0);
+  return {
+    ...head,
+    seats: items.map((r) => ({
+      seat_id: r.seat_id,
+      seat_number: r.seat_number,
+      seat_price: Number(r.seat_price),
+    })),
+    total: Math.round(total * 100) / 100,
+  };
+}
+
+module.exports = { findAll, findById, cancel, findLatestIdByUserId, findCustomerDetail };

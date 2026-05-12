@@ -1,10 +1,12 @@
 const { pool } = require('../db/pool');
 
-async function findAll({ venueId, date } = {}) {
+async function findAll({ venueId, date, showId } = {}) {
   let sql = `
     SELECT
       sg.showing_id, sg.show_id, sg.venues_id, sg.status,
-      sg.showtime_date, sg.start_time, sg.end_time, sg.booking_date, sg.language,
+      sg.showtime_date, sg.start_time, sg.end_time,
+      sg.ad_minutes, sg.cleanup_minutes,
+      sg.booking_date, sg.language,
       st.showtime_title AS movie_title, st.duration,
       v.venues_name,
       COALESCE(SUM(rs.status IN ('Reserved', 'Confirmed')), 0) AS sold,
@@ -24,10 +26,16 @@ async function findAll({ venueId, date } = {}) {
     sql += ' AND sg.showtime_date = ?';
     params.push(date);
   }
+  if (showId) {
+    sql += ' AND sg.show_id = ?';
+    params.push(showId);
+  }
   sql += `
     GROUP BY
       sg.showing_id, sg.show_id, sg.venues_id, sg.status,
-      sg.showtime_date, sg.start_time, sg.end_time, sg.booking_date, sg.language,
+      sg.showtime_date, sg.start_time, sg.end_time,
+      sg.ad_minutes, sg.cleanup_minutes,
+      sg.booking_date, sg.language,
       st.showtime_title, st.duration, v.venues_name
     ORDER BY sg.showtime_date ASC, sg.start_time ASC
   `;
@@ -43,24 +51,38 @@ async function findById(id) {
   return rows[0] || null;
 }
 
-async function create({ showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language }) {
+async function create({
+  showId, venueId, status, showtimeDate, startTime, endTime,
+  adMinutes, cleanupMinutes, bookingDate, language,
+}) {
   const [result] = await pool.query(
     `INSERT INTO showing
-       (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null]
+       (show_id, venues_id, status, showtime_date, start_time, end_time,
+        ad_minutes, cleanup_minutes, booking_date, language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      showId, venueId, status, showtimeDate, startTime, endTime,
+      adMinutes, cleanupMinutes, bookingDate || null, language || null,
+    ]
   );
   return result.insertId;
 }
 
-async function update(id, { showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language }) {
+async function update(id, {
+  showId, venueId, status, showtimeDate, startTime, endTime,
+  adMinutes, cleanupMinutes, bookingDate, language,
+}) {
   const [result] = await pool.query(
     `UPDATE showing
      SET show_id = ?, venues_id = ?, status = ?,
          showtime_date = ?, start_time = ?, end_time = ?,
+         ad_minutes = ?, cleanup_minutes = ?,
          booking_date = ?, language = ?
      WHERE showing_id = ?`,
-    [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null, id]
+    [
+      showId, venueId, status, showtimeDate, startTime, endTime,
+      adMinutes, cleanupMinutes, bookingDate || null, language || null, id,
+    ]
   );
   return result.affectedRows;
 }
@@ -113,7 +135,10 @@ async function listSeatIdsByVenue(venueId, conn = pool) {
 // Fix 3: overlap check is now inside the transaction using FOR UPDATE, eliminating
 // the TOCTOU race between checkOverlap() and the INSERT in the service layer.
 async function createWithSeatPricing(
-  { showId, venueId, status, showtimeDate, startTime, endTime, bookingDate, language },
+  {
+    showId, venueId, status, showtimeDate, startTime, endTime,
+    adMinutes, cleanupMinutes, bookingDate, language,
+  },
   defaultSeatPrice,
   seatPricing
 ) {
@@ -137,9 +162,14 @@ async function createWithSeatPricing(
     }
 
     const [result] = await conn.query(
-      `INSERT INTO showing (show_id, venues_id, status, showtime_date, start_time, end_time, booking_date, language)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [showId, venueId, status, showtimeDate, startTime, endTime, bookingDate || null, language || null]
+      `INSERT INTO showing (
+         show_id, venues_id, status, showtime_date, start_time, end_time,
+         ad_minutes, cleanup_minutes, booking_date, language
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        showId, venueId, status, showtimeDate, startTime, endTime,
+        adMinutes, cleanupMinutes, bookingDate || null, language || null,
+      ]
     );
     const showingId = result.insertId;
     const seatIds = await listSeatIdsByVenue(venueId, conn);
@@ -238,10 +268,23 @@ async function findMovieDurationById(showId) {
   return Number(rows[0].duration) || 0;
 }
 
+async function listSeatsForShowing(showingId) {
+  const [rows] = await pool.query(
+    `SELECT rs.seat_id, rs.status, rs.seat_price, s.seat_number
+     FROM reserved_seats rs
+     JOIN seats s ON s.seat_id = rs.seat_id
+     WHERE rs.showing_id = ?
+     ORDER BY s.seat_number`,
+    [showingId]
+  );
+  return rows;
+}
+
 module.exports = {
   findAll, findById, create, update, remove,
   checkOverlap, populateReservedSeats, listSeatIdsByVenue,
   createWithSeatPricing, updateReservedSeatPricing,
   deleteReservedSeats, removeWithSeats, hasBookings,
   findMovieDurationById,
+  listSeatsForShowing,
 };

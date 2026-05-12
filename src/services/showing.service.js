@@ -99,8 +99,8 @@ function assertCreateFields(data) {
   }
 }
 
-async function listShowings({ venueId, date } = {}) {
-  return showingModel.findAll({ venueId, date });
+async function listShowings({ venueId, date, showId } = {}) {
+  return showingModel.findAll({ venueId, date, showId });
 }
 
 async function createShowing(data) {
@@ -115,14 +115,14 @@ async function createShowing(data) {
     throw err;
   }
 
-  const endTime =
-    resolveTime(data.endHour, data.endTime) ||
-    await computeEndTime({
-      showId: data.showId,
-      startTime,
-      adMinutes: data.adMinutes,
-      bufferMinutes: data.bufferMinutes,
-    });
+  const adMinutes = normalizeExtraMinutes(data.adMinutes, DEFAULT_AD_MINUTES);
+  const cleanupMinutes = normalizeExtraMinutes(data.bufferMinutes, DEFAULT_BUFFER_MINUTES);
+  const endTime = await computeEndTime({
+    showId: data.showId,
+    startTime,
+    adMinutes,
+    bufferMinutes: cleanupMinutes,
+  });
 
   const venueSeatIds = await showingModel.listSeatIdsByVenue(data.venueId);
   const seatPricing = normalizeSeatPricing(data.seatPricing, venueSeatIds);
@@ -133,6 +133,8 @@ async function createShowing(data) {
     showtimeDate: data.showtimeDate,
     startTime,
     endTime,
+    adMinutes,
+    cleanupMinutes,
     bookingDate: data.bookingDate,
     language: data.language,
   }, seatPrice, seatPricing);
@@ -163,22 +165,18 @@ async function updateShowing(id, data) {
   const showId = data.showId ?? existing.show_id;
   const venueId = data.venueId ?? existing.venues_id;
   const showtimeDate = data.showtimeDate ?? existing.showtime_date;
-  const shouldRecomputeEnd =
-    data.endTime === undefined &&
-    data.endHour === undefined &&
-    (data.startTime !== undefined ||
-      data.startHour !== undefined ||
-      data.showId !== undefined ||
-      data.adMinutes !== undefined ||
-      data.bufferMinutes !== undefined);
-  const endTime = shouldRecomputeEnd
-    ? await computeEndTime({
-      showId,
-      startTime,
-      adMinutes: data.adMinutes,
-      bufferMinutes: data.bufferMinutes,
-    })
-    : resolveTime(data.endHour, data.endTime) || existing.end_time;
+  const adMinutes = (data.adMinutes !== undefined && data.adMinutes !== null && data.adMinutes !== '')
+    ? normalizeExtraMinutes(data.adMinutes, DEFAULT_AD_MINUTES)
+    : normalizeExtraMinutes(existing.ad_minutes, DEFAULT_AD_MINUTES);
+  const cleanupMinutes = (data.bufferMinutes !== undefined && data.bufferMinutes !== null && data.bufferMinutes !== '')
+    ? normalizeExtraMinutes(data.bufferMinutes, DEFAULT_BUFFER_MINUTES)
+    : normalizeExtraMinutes(existing.cleanup_minutes, DEFAULT_BUFFER_MINUTES);
+  const endTime = await computeEndTime({
+    showId,
+    startTime,
+    adMinutes,
+    bufferMinutes: cleanupMinutes,
+  });
 
   const overlap = await showingModel.checkOverlap({
     venueId,
@@ -200,6 +198,8 @@ async function updateShowing(id, data) {
     showtimeDate,
     startTime,
     endTime,
+    adMinutes,
+    cleanupMinutes,
     bookingDate: data.bookingDate ?? existing.booking_date,
     language: data.language ?? existing.language,
   });
