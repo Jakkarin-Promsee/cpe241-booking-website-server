@@ -27,4 +27,13 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin };
+function requireCustomer(req, res, next) {
+  if (req.user?.role !== 'Customer') {
+    const err = new Error('Customer access only');
+    err.statusCode = 403;
+    return next(err);
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireCustomer };
