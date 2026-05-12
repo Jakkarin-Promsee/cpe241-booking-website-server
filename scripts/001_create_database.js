@@ -4,6 +4,15 @@ const mysql = require('mysql2/promise');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+function buildSsl() {
+  const flag = (process.env.MYSQL_SSL || '').toLowerCase();
+  if (!['1', 'true', 'required'].includes(flag)) return undefined;
+  const caPath = process.env.MYSQL_SSL_CA_PATH;
+  if (caPath) return { ca: fs.readFileSync(path.resolve(caPath)), rejectUnauthorized: true };
+  const reject = String(process.env.MYSQL_SSL_REJECT_UNAUTHORIZED ?? '1').toLowerCase();
+  return { rejectUnauthorized: !['0', 'false', 'no'].includes(reject) };
+}
+
 async function main() {
   const sqlPath = path.join(__dirname, '001_create_database.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
@@ -14,6 +23,7 @@ async function main() {
     user: process.env.MYSQL_USER || 'root',
     password:
       process.env.MYSQL_PASSWORD !== undefined ? process.env.MYSQL_PASSWORD : '',
+    ssl: buildSsl(),
     multipleStatements: true,
   });
 

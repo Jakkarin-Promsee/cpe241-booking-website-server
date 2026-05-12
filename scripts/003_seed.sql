@@ -1,4 +1,7 @@
 -- 003_seed.sql
+-- Aiven enforces sql_require_primary_key=ON globally; recursive CTEs create
+-- internal temp tables that trigger the check. Disable for this session only.
+SET SESSION sql_require_primary_key = 0;
 -- Populates CPE241_final_project with realistic demo data.
 -- {{HASH_ADMIN}}, {{HASH_MANAGER}}, {{HASH_CUSTOMER}} are substituted by 003_seed.js
 -- before execution (bcrypt hashes of Admin@1234, Manager@1234, User@1234 respectively).
